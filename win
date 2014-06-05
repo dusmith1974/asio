@@ -1,0 +1,19 @@
+#!/bin/bash
+# use C-a Z to maximize a split window
+# tmux list-commands
+
+cd olreplay
+tmux rename-window vim
+tmux new-window -c ~/sw/workspaces/asio
+tmux rename-window gcc 
+#tmux split-window -h -c ~/sw/workspaces/asio
+tmux new-window -c ~/sw/workspaces/asio
+tmux rename-window gdb
+tmux split-window -h -c ~/sw/workspaces/asio
+tmux new-window -c ~/sw/workspaces/asio
+tmux rename-window run
+tmux split-window -h -c ~/sw/workspaces/asio
+tmux new-window -c ~/sw/workspaces
+tmux rename-window grep
+tmux select-window -t 1
+vim client.cc server.cc
