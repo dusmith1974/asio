@@ -16,4 +16,4 @@ tmux split-window -h -c ~/sw/workspaces/asio
 tmux new-window -c ~/sw/workspaces
 tmux rename-window grep
 tmux select-window -t 1
-vim client.cc server.cc
+vim pub.cc sub.cc

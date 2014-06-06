@@ -1,0 +1,6 @@
+pub/sub
+register (like login, pass hostname) to recv topic list
+topic list changed - like client list
+subscribe/unsubscribe from topics
+topic map
+add to map from main app (post to separate comms thread) swmr guard, kicks send.
