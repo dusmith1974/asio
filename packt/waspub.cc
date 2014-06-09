@@ -52,13 +52,11 @@ public:
         ptr self = shared_from_this();
         array::iterator it = std::find(clients.begin(), clients.end(), self);
         clients.erase(it);
-        //update_clients_changed();
     }
 
     bool started() const { return started_; }
     ip::tcp::socket& sock() { return sock_;}
     std::string topic() const { return topic_; }
-    //void set_clients_changed() { clients_changed_ = true; }
 
 private:
     void on_read(const error_code & err, size_t bytes) {
@@ -68,9 +66,7 @@ private:
         // process the msg
         std::string msg(read_buffer_, bytes);
         if (msg.find("subscribe") == 0) on_subscribe(msg);
-        else if (msg.find("unsubscribe") == 0) on_unsubscribe(msg);
         else if (msg.find("ping") == 0) on_ping();
-        //else if (msg.find("ask_clients") == 0) on_clients();
         else std::cerr << "invalid msg " << msg << std::endl;
     }
 
@@ -80,33 +76,12 @@ private:
         in >> topic_ >> topic_;
         std::cout << topic_ << " subscribed" << std::endl;
         do_write("subscribed ok\n");
-        //update_clients_changed();
-    }
-
-    void on_unsubscribe(const std::string & msg) {
-        std::istringstream in(msg);
-        std::string topic;
-        in >> topic >> topic;
-        std::cout << topic_ << " unsubscribed" << std::endl;
-        topic_ = "";
-        do_write("unsubscribed ok\n");
-        //update_clients_changed();
     }
 
     void on_ping() {
+        std::cout << "ping ok\n";
         do_write("ping ok\n");
-        //do_write(clients_changed_ ? "ping client_list_changed\n" : "ping ok\n");
-        //clients_changed_ = false;
     }
-
-    // on_topics_changed (on_clients_changed in async_server.cpp)
-    // on_topics, show available?
-    /*void on_clients() {
-        std::string msg;
-        for( array::const_iterator b = clients.begin(), e = clients.end() ; b != e; ++b)
-            msg += (*b)->username() + " ";
-        do_write("clients " + msg + "\n");
-    }*/
 
     void on_check_ping(const boost::system::error_code& err) {
       if (err) return; // operation_aborted when expire_from_now reset
@@ -133,13 +108,6 @@ private:
         post_check_ping();
     }
 
-    void do_write(const std::string & msg) {
-        if (!started() ) return;
-
-        std::copy(msg.begin(), msg.end(), write_buffer_);
-        sock_.async_write_some(buffer(write_buffer_, msg.size()),
-                                MEM_FN2(on_write,_1,_2));
-    }
     size_t read_complete(const boost::system::error_code & err, size_t bytes) {
         if ( err) return 0;
         bool found = std::find(read_buffer_, read_buffer_ + bytes, '\n') < read_buffer_ + bytes;
@@ -152,6 +120,13 @@ private:
     enum { max_msg = 1024 };
     char read_buffer_[max_msg];
     char write_buffer_[max_msg];
+    void do_write(const std::string & msg) {
+        if (!started() ) return;
+
+        std::copy(msg.begin(), msg.end(), write_buffer_);
+        sock_.async_write_some(buffer(write_buffer_, msg.size()),
+                                MEM_FN2(on_write,_1,_2));
+    }
     bool started_;
 
     std::string topic_;

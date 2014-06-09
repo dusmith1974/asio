@@ -19,14 +19,14 @@
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
-//#include <boost/asio/ip/udp.hpp>
+#include <boost/asio/ip/udp.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
 
 using boost::asio::deadline_timer;
 using boost::asio::ip::tcp;
-//using boost::asio::ip::udp;
+using boost::asio::ip::udp;
 
 //----------------------------------------------------------------------
 
@@ -330,7 +330,7 @@ typedef boost::shared_ptr<tcp_session> tcp_session_ptr;
 
 //----------------------------------------------------------------------
 
-/*class udp_broadcaster
+class udp_broadcaster
   : public subscriber
 {
 public:
@@ -349,7 +349,7 @@ private:
   }
 
   udp::socket socket_;
-};*/
+};
 
 //----------------------------------------------------------------------
 
@@ -357,13 +357,13 @@ class server
 {
 public:
   server(boost::asio::io_service& io_service,
-      const tcp::endpoint& listen_endpoint/*,
-      const udp::endpoint& broadcast_endpoint*/)
+      const tcp::endpoint& listen_endpoint,
+      const udp::endpoint& broadcast_endpoint)
     : io_service_(io_service),
       acceptor_(io_service, listen_endpoint)
   {
-    //subscriber_ptr bc(new udp_broadcaster(io_service_, broadcast_endpoint));
-    //channel_.join(bc);
+    subscriber_ptr bc(new udp_broadcaster(io_service_, broadcast_endpoint));
+    channel_.join(bc);
 
     start_accept();
   }
@@ -401,9 +401,9 @@ int main(int argc, char* argv[])
   {
     using namespace std; // For atoi.
 
-    if (argc != 2)
+    if (argc != 4)
     {
-      std::cerr << "Usage: server <listen_port>\n";
+      std::cerr << "Usage: server <listen_port> <bcast_address> <bcast_port>\n";
       return 1;
     }
 
@@ -411,10 +411,10 @@ int main(int argc, char* argv[])
 
     tcp::endpoint listen_endpoint(tcp::v4(), atoi(argv[1]));
 
-    /*udp::endpoint broadcast_endpoint(
-        boost::asio::ip::address::from_string(argv[2]), atoi(argv[3]));*/
+    udp::endpoint broadcast_endpoint(
+        boost::asio::ip::address::from_string(argv[2]), atoi(argv[3]));
 
-    server s(io_service, listen_endpoint/*, broadcast_endpoint*/);
+    server s(io_service, listen_endpoint, broadcast_endpoint);
 
     io_service.run();
   }
