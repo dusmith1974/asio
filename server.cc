@@ -7,7 +7,7 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
-
+#include <thread>
 #include <algorithm>
 #include <cstdlib>
 #include <deque>
@@ -46,16 +46,19 @@ class channel
 public:
   void join(subscriber_ptr subscriber)
   {
+    std::cout << "channel::join() (subscribers_.insert())\n";
     subscribers_.insert(subscriber);
   }
 
   void leave(subscriber_ptr subscriber)
   {
+    std::cout << "channel::leave  () (subscribers_.erase())\n";
     subscribers_.erase(subscriber);
   }
 
   void deliver(const std::string& msg)
   {
+    std::cout << "channel::deliver() iter subsctibers bind deliver)\n";
     std::for_each(subscribers_.begin(), subscribers_.end(),
         boost::bind(&subscriber::deliver, _1, boost::ref(msg)));
   }
@@ -140,6 +143,8 @@ public:
       non_empty_output_queue_(io_service),
       output_deadline_(io_service)
   {
+    std::cout << this << " tcp_session::tcp::session() lower flags)\n";
+
     input_deadline_.expires_at(boost::posix_time::pos_infin);
     output_deadline_.expires_at(boost::posix_time::pos_infin);
 
@@ -157,6 +162,7 @@ public:
   // Called by the server object to initiate the four actors.
   void start()
   {
+    std::cout << this << " tcp_session::start() channel join this, read, input-dl, await out, output-dl)\n";
     channel_.join(shared_from_this());
 
     start_read();
@@ -175,6 +181,7 @@ public:
 private:
   void stop()
   {
+    std::cout << "tcp_session::stop() channel leave close)\n";
     channel_.leave(shared_from_this());
 
     boost::system::error_code ignored_ec;
@@ -191,6 +198,7 @@ private:
 
   void deliver(const std::string& msg)
   {
+    std::cout << "tcp_session::deliver() push container, raise non-empty)\n";
     output_queue_.push_back(msg + "\n");
 
     // Signal that the output queue contains messages. Modifying the expiry
@@ -200,6 +208,7 @@ private:
 
   void start_read()
   {
+    std::cout << "tcp_session::start_read() raise input_deadline(30), read_until(handle_read)\n";
     // Set a deadline for the read operation.
     input_deadline_.expires_from_now(boost::posix_time::seconds(30));
 
@@ -210,6 +219,7 @@ private:
 
   void handle_read(const boost::system::error_code& ec)
   {
+    std::cout << "tcp_session::tcp::handle_read() if msg channel.deliver else push hb and raise non-empty); start_read\n";
     if (stopped())
       return;
 
@@ -222,6 +232,7 @@ private:
 
       if (!msg.empty())
       {
+        std::cout << "channel_.deliver(msg);\n";
         channel_.deliver(msg);
       }
       else
@@ -230,6 +241,7 @@ private:
         // else being sent or ready to be sent, send a heartbeat right back.
         if (output_queue_.empty())
         {
+          std::cout << "push back heart beat.\n";
           output_queue_.push_back("\n");
 
           // Signal that the output queue contains messages. Modifying the
@@ -248,6 +260,7 @@ private:
 
   void await_output()
   {
+    std::cout << "tcp_session::await_output() lower non-empty and wait or start_write.\n";
     if (stopped())
       return;
 
@@ -268,6 +281,7 @@ private:
 
   void start_write()
   {
+    std::cout << "tcp_session::start_write() raise out-dl, async_write(oq.front(), handle_write)\n";
     // Set a deadline for the write operation.
     output_deadline_.expires_from_now(boost::posix_time::seconds(30));
 
@@ -279,6 +293,7 @@ private:
 
   void handle_write(const boost::system::error_code& ec)
   {
+    std::cout << "tcp_session::handle_write() oq.pop_front, await-out\n";
     if (stopped())
       return;
 
@@ -296,6 +311,8 @@ private:
 
   void check_deadline(deadline_timer* deadline)
   {
+    std::cout << "tcp_session::check_deadline(dl*) recheck deadline now incase moved, stop if expired, else wait\n";
+
     if (stopped())
       return;
 
@@ -362,6 +379,7 @@ public:
     : io_service_(io_service),
       acceptor_(io_service, listen_endpoint)
   {
+    std::cout << "server::server() start_accept\n";
     //subscriber_ptr bc(new udp_broadcaster(io_service_, broadcast_endpoint));
     //channel_.join(bc);
 
@@ -370,6 +388,7 @@ public:
 
   void start_accept()
   {
+    std::cout << "server::start_accept() ptr = new_session, async_accept(handle_accept)\n";
     tcp_session_ptr new_session(new tcp_session(io_service_, channel_));
 
     acceptor_.async_accept(new_session->socket(),
@@ -379,12 +398,19 @@ public:
   void handle_accept(tcp_session_ptr session,
       const boost::system::error_code& ec)
   {
+    std::cout << "server::handle_accept(session_ptr) session->start(), start_accept()\n";
     if (!ec)
     {
       session->start();
     }
 
     start_accept();
+  }
+
+  // TODO(ds) cache msgs (map) for catch-up on new client connect.
+  void publish_message(const std::string& msg) {
+    std::cout << "pm msg\n";
+    channel_.deliver(msg);
   }
 
 private:
@@ -397,6 +423,7 @@ private:
 
 int main(int argc, char* argv[])
 {
+  std::cout << "main() server(io_service, endpoint); service.run()\n";
   try
   {
     using namespace std; // For atoi.
@@ -416,7 +443,15 @@ int main(int argc, char* argv[])
 
     server s(io_service, listen_endpoint/*, broadcast_endpoint*/);
 
-    io_service.run();
+    std::thread t([&](){ io_service.run(); });
+    std::string abc("abc");
+    for (;;) {
+      io_service.post(boost::bind(&server::publish_message, &s, abc));
+      sleep(1);
+    }
+
+    t.join();
+    //io_service.run();
   }
   catch (std::exception& e)
   {
