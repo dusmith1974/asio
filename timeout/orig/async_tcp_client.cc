@@ -8,8 +8,6 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#include <thread>
-
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -17,7 +15,6 @@
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/bind.hpp>
-#include "boost/lexical_cast.hpp"
 #include <iostream>
 
 using boost::asio::deadline_timer;
@@ -224,16 +221,8 @@ private:
 
   void start_write()
   {
-    using boost::lexical_cast;
     if (stopped_)
       return;
-
-    //static int a = 2;
-    //std::string msg; // need mem-var? y ok for hardcoded literal though.
-    //if (a++ % 2 == 0)
-    //  msg="\n";
-    //else
-    //  msg = "my " + lexical_cast<std::string>(a) + " message.\n";
 
     // Start an asynchronous operation to send a heartbeat message.
     boost::asio::async_write(socket_, boost::asio::buffer("\n", 1),
