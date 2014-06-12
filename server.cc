@@ -1,17 +1,23 @@
-#include <thread>
 #include <algorithm>
 #include <cstdlib>
 #include <deque>
 #include <iostream>
 #include <set>
+#include <thread>
 
-#include <boost/bind.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/enable_shared_from_this.hpp>
 #include <boost/asio.hpp>
+#include <boost/bind.hpp>
+#include <boost/enable_shared_from_this.hpp>
+#include <boost/shared_ptr.hpp>
 
 using boost::asio::deadline_timer;
 using boost::asio::ip::tcp;
+using boost::bind;
+using boost::shared_ptr;
+using boost::system::error_code;
+
+namespace asio = boost::asio;
+namespace posix_time = boost::posix_time;
 
 class Subscriber {
  public:
@@ -19,9 +25,10 @@ class Subscriber {
   virtual void Deliver(const std::string& msg) = 0;
 };
 
+typedef shared_ptr<Subscriber> SubscriberPtr;
+
 class TcpSession;
-typedef boost::shared_ptr<Subscriber> SubscriberPtr;
-typedef boost::shared_ptr<TcpSession> TcpSessionPtr;
+typedef shared_ptr<TcpSession> TcpSessionPtr;
 
 class Channel {
  public:
@@ -35,7 +42,7 @@ class Channel {
 
   void Deliver(const std::string& msg) {
     std::for_each(subscribers_.begin(), subscribers_.end(),
-        boost::bind(&Subscriber::Deliver, _1, boost::ref(msg)));
+        bind(&Subscriber::Deliver, _1, boost::ref(msg)));
   }
 
  private:
@@ -46,28 +53,28 @@ class TcpSession
   : public Subscriber,
     public boost::enable_shared_from_this<TcpSession> {
  public:
-  TcpSession(boost::asio::io_service& io_service, Channel& ch)
+  TcpSession(asio::io_service& io_service, Channel& ch)
     : channel_(ch),
       socket_(io_service),
       input_deadline_(io_service),
       non_empty_output_queue_(io_service),
       output_deadline_(io_service) {
-    input_deadline_.expires_at(boost::posix_time::pos_infin);
-    output_deadline_.expires_at(boost::posix_time::pos_infin);
-    non_empty_output_queue_.expires_at(boost::posix_time::pos_infin);
+    input_deadline_.expires_at(posix_time::pos_infin);
+    output_deadline_.expires_at(posix_time::pos_infin);
+    non_empty_output_queue_.expires_at(posix_time::pos_infin);
   }
 
   void Start() {
     channel_.Join(shared_from_this());
 
     StartRead();
-    input_deadline_.async_wait(boost::bind(&TcpSession::CheckDeadline,
-                                           shared_from_this(),
-                                           &input_deadline_));
+    input_deadline_.async_wait(bind(&TcpSession::CheckDeadline,
+                                    shared_from_this(),
+                                    &input_deadline_));
     AwaitOutput();
-    output_deadline_.async_wait(boost::bind(&TcpSession::CheckDeadline,
-                                            shared_from_this(),
-                                            &output_deadline_));
+    output_deadline_.async_wait(bind(&TcpSession::CheckDeadline,
+                                     shared_from_this(),
+                                     &output_deadline_));
   }
 
   tcp::socket& socket() {
@@ -76,14 +83,14 @@ class TcpSession
 
   void Deliver(const std::string& msg) {
     output_queue_.push_back(msg + "\n");
-    non_empty_output_queue_.expires_at(boost::posix_time::neg_infin);
+    non_empty_output_queue_.expires_at(posix_time::neg_infin);
   }
 
  private:
   void Stop() {
     channel_.Leave(shared_from_this());
 
-    boost::system::error_code ignored_ec;
+    error_code ignored_ec;
     socket_.close(ignored_ec);
     input_deadline_.cancel();
     non_empty_output_queue_.cancel();
@@ -95,13 +102,13 @@ class TcpSession
   }
 
   void StartRead() {
-    input_deadline_.expires_from_now(boost::posix_time::seconds(30));
-    boost::asio::async_read_until(socket_, input_buffer_, '\n',
-                                  boost::bind(&TcpSession::HandleRead,
-                                              shared_from_this(), _1));
+    input_deadline_.expires_from_now(posix_time::seconds(30));
+    asio::async_read_until(socket_, input_buffer_, '\n',
+                           bind(&TcpSession::HandleRead,
+                                shared_from_this(), _1));
   }
 
-  void HandleRead(const boost::system::error_code& ec) {
+  void HandleRead(const error_code& ec) {
     if (Stopped()) return;
 
     if (ec) {
@@ -117,7 +124,7 @@ class TcpSession
       else {
         if (output_queue_.empty()) {
           output_queue_.push_back("\n");  // Return heartbeat if idle.
-          non_empty_output_queue_.expires_at(boost::posix_time::neg_infin);
+          non_empty_output_queue_.expires_at(posix_time::neg_infin);
         }
       }
 
@@ -129,22 +136,21 @@ class TcpSession
     if (Stopped()) return;
 
     if (output_queue_.empty()) {
-      non_empty_output_queue_.expires_at(boost::posix_time::pos_infin);
-      non_empty_output_queue_.async_wait(boost::bind(&TcpSession::AwaitOutput,
-                                                     shared_from_this()));
+      non_empty_output_queue_.expires_at(posix_time::pos_infin);
+      non_empty_output_queue_.async_wait(bind(&TcpSession::AwaitOutput,
+                                              shared_from_this()));
     } else {
       StartWrite();
     }
   }
 
   void StartWrite() {
-    output_deadline_.expires_from_now(boost::posix_time::seconds(30));
-    boost::asio::async_write(socket_, boost::asio::buffer(output_queue_.front()),
-                             boost::bind(&TcpSession::HandleWrite,
-                                         shared_from_this(), _1));
+    output_deadline_.expires_from_now(posix_time::seconds(30));
+    asio::async_write(socket_, asio::buffer(output_queue_.front()),
+                      bind(&TcpSession::HandleWrite, shared_from_this(), _1));
   }
 
-  void HandleWrite(const boost::system::error_code& ec) {
+  void HandleWrite(const error_code& ec) {
     if (Stopped()) return;
 
     if (!ec) {
@@ -161,13 +167,13 @@ class TcpSession
     if (deadline->expires_at() <= deadline_timer::traits_type::now())
       Stop();
     else
-      deadline->async_wait(boost::bind(&TcpSession::CheckDeadline,
-                           shared_from_this(), deadline));
+      deadline->async_wait(bind(&TcpSession::CheckDeadline,
+                                shared_from_this(), deadline));
   }
 
   Channel& channel_;
   tcp::socket socket_;
-  boost::asio::streambuf input_buffer_;
+  asio::streambuf input_buffer_;
   deadline_timer input_deadline_;
   std::deque<std::string> output_queue_;
   deadline_timer non_empty_output_queue_;
@@ -176,7 +182,7 @@ class TcpSession
 
 class Server {
  public:
-  Server(boost::asio::io_service& io_service,
+  Server(asio::io_service& io_service,
          const tcp::endpoint& listen_endpoint)
     : io_service_(io_service),
       acceptor_(io_service, listen_endpoint) {
@@ -187,10 +193,10 @@ class Server {
     TcpSessionPtr new_session(new TcpSession(io_service_, channel_));
 
     acceptor_.async_accept(new_session->socket(),
-        boost::bind(&Server::HandleAccept, this, new_session, _1));
+        bind(&Server::HandleAccept, this, new_session, _1));
   }
 
-  void HandleAccept(TcpSessionPtr session, const boost::system::error_code& ec) {
+  void HandleAccept(TcpSessionPtr session, const error_code& ec) {
     if (!ec) {
       for (const auto& msg : cache_) { // TODO(ds) use container adapter
         session->Deliver(msg.second);
@@ -201,14 +207,13 @@ class Server {
     StartAccept();
   }
 
-  // TODO(ds) cache msgs (map) for catch-up on new client connect.
   void PublishMessage(const std::string& msg) {
     cache_[cache_.size() + 1] = msg;
     channel_.Deliver(msg);
   }
 
  private:
-  boost::asio::io_service& io_service_;
+  asio::io_service& io_service_;
   tcp::acceptor acceptor_;
   Channel channel_;
 
@@ -224,16 +229,16 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    boost::asio::io_service io_service;
+    asio::io_service io_service;
     tcp::endpoint listen_endpoint(tcp::v4(), atoi(argv[1]));
 
-    Server s(io_service, listen_endpoint);
-    io_service.post(boost::bind(&Server::PublishMessage, &s, "000"));
+    Server server(io_service, listen_endpoint);
+    io_service.post(bind(&Server::PublishMessage, &server, "000"));
 
     std::thread t([&](){ io_service.run(); });
     std::string abc("abc");
     for (;;) {
-      io_service.post(boost::bind(&Server::PublishMessage, &s, abc));
+      io_service.post(bind(&Server::PublishMessage, &server, abc));
       sleep(1);
     }
 
